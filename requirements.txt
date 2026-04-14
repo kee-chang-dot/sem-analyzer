@@ -3,4 +3,3 @@ streamlit-drawable-canvas
 numpy
 opencv-python-headless
 matplotlib
-Pillow
