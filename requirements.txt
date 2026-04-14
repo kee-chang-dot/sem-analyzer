@@ -3,3 +3,4 @@ streamlit-drawable-canvas
 numpy
 opencv-python-headless
 matplotlib
+Pillow>=10.2.0
