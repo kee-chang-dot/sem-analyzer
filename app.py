@@ -10,16 +10,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import matplotlib.gridspec as gridspec
 import os
-import time
 from PIL import Image
-import io
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "STHeiti", "WenQuanYi Micro Hei", "Arial Unicode MS"]
 plt.rcParams["axes.unicode_minus"] = False
 
 
 # ====================================================================
-# 你的原版核心类，完全保留在 app.py 中，剥离了 Tkinter 和 Matplotlib 交互按钮
+# 原版核心类，完全保留在 app.py 中，剥离了 Tkinter 和 Matplotlib 交互按钮
 # ====================================================================
 class AdvancedSEMAnalyzer:
     def __init__(self):
@@ -284,14 +282,18 @@ st.markdown("---")
 
 
 # 1. 替换 filedialog，变为网页上传
-uploaded_file = st.file_uploader("选择 SEM 图像", type=["png", "jpg", "jpeg", "tif"])
+uploaded_file = st.file_uploader("选择 SEM 图像", type=["png", "jpg", "jpeg", "tif", "tiff"])
 
 if uploaded_file is not None:
     # 修复：利用文件名判断是否传了新图，解决换图不刷新的问题
     if "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name:
-        uploaded_file.seek(0) 
-        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-        img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        uploaded_file.seek(0)
+        
+        # 【终极修复】放弃 cv2，改用 PIL 专门读取 TIF 等科研格式图片
+        pil_upload = Image.open(uploaded_file).convert("RGB")
+        img = np.array(pil_upload)
+        # 转换回 OpenCV 习惯的 BGR 格式，保证后续分析正常运行
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
         
         # 修复：自动调整过大图像的尺寸，防止画板白屏
         max_width = 1200
