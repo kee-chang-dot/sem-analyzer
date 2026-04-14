@@ -17,7 +17,7 @@ plt.rcParams["axes.unicode_minus"] = False
 
 
 # ====================================================================
-# 原版核心类，完全保留在 app.py 中，剥离了 Tkinter 和 Matplotlib 交互按钮
+# 你的原版核心类，完全保留在 app.py 中，剥离了 Tkinter 和 Matplotlib 交互按钮
 # ====================================================================
 class AdvancedSEMAnalyzer:
     def __init__(self):
@@ -224,27 +224,20 @@ st.set_page_config(layout="wide", page_title="SEM 分析系统")
 st.markdown(
     """
     <style>
-    /* 1. 放大所有组件的标题（如“选择鼠标操作:”、“标尺实际长度:”） */
     div[data-testid="stWidgetLabel"] p {
-        font-size: 25px !important;
+        font-size: 20px !important;
         font-weight: bold !important;
         color: #003366 !important; 
     }
-
-    /* 2. 放大单选按钮的选项文字（红、蓝、绿、黄） */
     div[role="radiogroup"] label p {
-        font-size: 25px !important;
+        font-size: 20px !important;
     }
-
-    /* 3. 放大按钮文字（计算孔隙率、清除所有标注） */
     div[data-testid="stButton"] button p {
-        font-size: 25px !important;
+        font-size: 20px !important;
         font-weight: bold !important;
     }
-
-    /* 4. 放大输入框里的数字 */
     input {
-        font-size: 25px !important;
+        font-size: 20px !important;
     }
     </style>
     """,
@@ -260,7 +253,7 @@ if "img_matrix" not in st.session_state:
 # ==========================================
 # 添加：页面头部（校徽与校名）
 # ==========================================
-col_logo, col_title = st.columns([1, 15])  # 1:15 的比例，让Logo靠左紧凑
+col_logo, col_title = st.columns([1, 15]) 
 
 with col_logo:
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo", "syuct.png")
@@ -285,28 +278,42 @@ st.markdown("---")
 uploaded_file = st.file_uploader("选择 SEM 图像", type=["png", "jpg", "jpeg", "tif", "tiff"])
 
 if uploaded_file is not None:
-    # 修复：利用文件名判断是否传了新图，解决换图不刷新的问题
+    # 修复：利用文件名判断是否传了新图
     if "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name:
-        uploaded_file.seek(0)
-        
-        # 【终极修复】放弃 cv2，改用 PIL 专门读取 TIF 等科研格式图片
-        pil_upload = Image.open(uploaded_file).convert("RGB")
-        img = np.array(pil_upload)
-        # 转换回 OpenCV 习惯的 BGR 格式，保证后续分析正常运行
-        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-        
-        # 修复：自动调整过大图像的尺寸，防止画板白屏
-        max_width = 1200
-        if img.shape[1] > max_width:
-            ratio = max_width / img.shape[1]
-            new_height = int(img.shape[0] * ratio)
-            img = cv2.resize(img, (max_width, new_height))
-        
-        # 更新状态
-        st.session_state.img_matrix = img
-        st.session_state.analyzer = AdvancedSEMAnalyzer()
-        st.session_state.analyzer.load_image_from_matrix(img)
-        st.session_state.current_file = uploaded_file.name
+        try:
+            # 【防弹级修复】专门处理科研图像的颜色空间和深度转换
+            pil_upload = Image.open(uploaded_file)
+            img_array = np.array(pil_upload)
+
+            # 将 16 位和 32 位科研图像标准化为 8 位，防止白屏
+            if img_array.dtype == np.uint16 or img_array.dtype == np.int32:
+                img_array = (img_array / 256).astype(np.uint8)
+
+            # 转换为标准 BGR 格式给 OpenCV 使用
+            if len(img_array.shape) == 2: # 灰度图
+                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
+            elif len(img_array.shape) == 3 and img_array.shape[2] == 4: # 带有透明通道
+                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
+            elif len(img_array.shape) == 3 and img_array.shape[2] == 3: # 正常彩色图
+                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            else:
+                img_bgr = img_array
+
+            # 限制尺寸为 800，确保绝对不会超出浏览器内存和网络传输限制
+            max_width = 800
+            if img_bgr.shape[1] > max_width:
+                ratio = max_width / img_bgr.shape[1]
+                new_height = int(img_bgr.shape[0] * ratio)
+                img_bgr = cv2.resize(img_bgr, (max_width, new_height))
+
+            # 更新核心状态
+            st.session_state.img_matrix = img_bgr
+            st.session_state.analyzer = AdvancedSEMAnalyzer()
+            st.session_state.analyzer.load_image_from_matrix(img_bgr)
+            st.session_state.current_file = uploaded_file.name
+        except Exception as e:
+            st.error(f"读取图像失败: {e}")
+            st.stop()
 
     col_img, col_controls = st.columns([2, 1])
 
@@ -346,6 +353,8 @@ if uploaded_file is not None:
             st.rerun()
 
     with col_img:
+        # 获取精确的宽高参数，防止画布变形
+        img_h, img_w = st.session_state.img_matrix.shape[:2]
         pil_img = Image.fromarray(cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB))
 
         canvas_result = st_canvas(
@@ -354,10 +363,11 @@ if uploaded_file is not None:
             stroke_color=stroke_color,
             background_image=pil_img,
             update_streamlit=True,
-            height=pil_img.height,
-            width=pil_img.width,
+            height=int(img_h),
+            width=int(img_w),
             drawing_mode=drawing_mode,
-            key="canvas",
+            # 【核心修复机制】为每张图片分配一个独立的钥匙，彻底打破组件缓存机制！
+            key=f"canvas_{st.session_state.current_file}",
         )
 
         if canvas_result.json_data is not None:
