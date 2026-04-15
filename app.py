@@ -10,14 +10,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import matplotlib.gridspec as gridspec
 import os
-import io
 from PIL import Image
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "STHeiti", "WenQuanYi Micro Hei", "Arial Unicode MS"]
 plt.rcParams["axes.unicode_minus"] = False
 
+
 # ====================================================================
-# 核心计算类 (完全保留无改动)
+# 你的原版核心类，完全保留在 app.py 中，剥离了 Tkinter 和 Matplotlib 交互按钮
 # ====================================================================
 class AdvancedSEMAnalyzer:
     def __init__(self):
@@ -40,6 +40,7 @@ class AdvancedSEMAnalyzer:
         self.poly_gray_mean = None
         self.is_pore_darker = True
 
+    # 修改为直接接收前端转换好的矩阵，不再从本地路径读取
     def load_image_from_matrix(self, image_array):
         if image_array is None:
             raise ValueError("无法读取图像文件")
@@ -110,7 +111,10 @@ class AdvancedSEMAnalyzer:
 
         pore_sizes = []
         if self.scale_pixels and self.scale_real:
-            contours, _ = cv2.findContours((pred == 0).astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            contours, _ = cv2.findContours(
+                (pred == 0).astype(np.uint8),
+                cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
             for cnt in contours:
                 area = cv2.contourArea(cnt)
                 if area > 5:
@@ -132,13 +136,17 @@ class AdvancedSEMAnalyzer:
 
         ax2 = fig.add_subplot(gs[0, 1])
         ax2.imshow(self.original_image, cmap="gray")
-        for x, y in self.pore_samples: ax2.plot(y, x, "ro", markersize=4)
-        for x, y in self.polymer_samples: ax2.plot(y, x, "bo", markersize=4)
+        for x, y in self.pore_samples:
+            ax2.plot(y, x, "ro", markersize=4)
+        for x, y in self.polymer_samples:
+            ax2.plot(y, x, "bo", markersize=4)
         if self.selection_start and self.selection_end:
-            ax2.add_patch(Rectangle((self.selection_start[1], self.selection_start[0]),
-                                    self.selection_end[1] - self.selection_start[1],
-                                    self.selection_end[0] - self.selection_start[0],
-                                    fill=False, edgecolor="lime", linewidth=2))
+            ax2.add_patch(Rectangle(
+                (self.selection_start[1], self.selection_start[0]),
+                self.selection_end[1] - self.selection_start[1],
+                self.selection_end[0] - self.selection_start[0],
+                fill=False, edgecolor="lime", linewidth=2
+            ))
         ax2.set_title("标注图像 (红=孔洞, 蓝=聚合物)")
         ax2.axis("off")
 
@@ -171,7 +179,8 @@ class AdvancedSEMAnalyzer:
         ax5.grid(True, alpha=0.25)
 
         ax6 = fig.add_subplot(gs[1, 2])
-        bars = ax6.bar(["样本准确率"], [self.training_accuracy if self.training_accuracy else 0], color="steelblue", width=0.4)
+        bars = ax6.bar(["样本准确率"], [self.training_accuracy if self.training_accuracy else 0], color="steelblue",
+                       width=0.4)
         ax6.text(bars[0].get_x() + bars[0].get_width() / 2, bars[0].get_height() + 1,
                  "{:.1f}%".format(self.training_accuracy if self.training_accuracy else 0), ha="center", fontsize=12)
         ax6.set_ylabel("准确率 (%)")
@@ -205,76 +214,128 @@ class AdvancedSEMAnalyzer:
 
 
 # ====================================================================
-# UI 与交互逻辑
+# 【关键2】使用 Streamlit 替换掉原来的 root = tk.Tk() 和 GUI 代码
 # ====================================================================
 st.set_page_config(layout="wide", page_title="SEM 分析系统")
 
+# ==========================================
+# 添加：控制面板字体放大 CSS 样式
+# ==========================================
 st.markdown(
     """
     <style>
-    div[data-testid="stWidgetLabel"] p { font-size: 20px !important; font-weight: bold !important; color: #003366 !important; }
-    div[role="radiogroup"] label p { font-size: 20px !important; }
-    div[data-testid="stButton"] button p { font-size: 20px !important; font-weight: bold !important; }
-    input { font-size: 20px !important; }
+    div[data-testid="stWidgetLabel"] p {
+        font-size: 20px !important;
+        font-weight: bold !important;
+        color: #003366 !important; 
+    }
+    div[role="radiogroup"] label p {
+        font-size: 20px !important;
+    }
+    div[data-testid="stButton"] button p {
+        font-size: 20px !important;
+        font-weight: bold !important;
+    }
+    input {
+        font-size: 20px !important;
+    }
     </style>
-    """, unsafe_allow_html=True
+    """,
+    unsafe_allow_html=True
 )
+# ==========================================
 
 if "analyzer" not in st.session_state:
     st.session_state.analyzer = AdvancedSEMAnalyzer()
 if "img_matrix" not in st.session_state:
     st.session_state.img_matrix = None
 
-col_logo, col_title = st.columns([1, 15])
+# ==========================================
+# 添加：页面头部（校徽与校名）
+# ==========================================
+col_logo, col_title = st.columns([1, 15]) 
+
 with col_logo:
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logo", "syuct.png")
     if os.path.exists(logo_path):
-        st.image(logo_path, use_column_width=True)
-with col_title:
-    st.markdown("<div style='display: flex; align-items: center; height: 100%; padding-top: 10px;'><h2 style='color: #003366; margin: 0;'>沈阳化工大学 <span style='color: #333; font-size: 24px; font-weight: normal; margin-left: 15px;'>SEM 孔隙率智能分析系统</span></h2></div>", unsafe_allow_html=True)
-st.markdown("---")
+        st.image(logo_path, use_column_width=True)  
 
+with col_title:
+    st.markdown(
+        """
+        <div style='display: flex; align-items: center; height: 100%; padding-top: 10px;'>
+            <h2 style='color: #003366; margin: 0;'>沈阳化工大学 <span style='color: #333; font-size: 24px; font-weight: normal; margin-left: 15px;'>SEM 孔隙率智能分析系统</span></h2>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+st.markdown("---")  
+# ==========================================
+
+
+# 1. 替换 filedialog，变为网页上传
 uploaded_file = st.file_uploader("选择 SEM 图像", type=["png", "jpg", "jpeg", "tif", "tiff"])
 
 if uploaded_file is not None:
-    if st.session_state.get("current_file") != uploaded_file.name:
+    # 修复：利用文件名判断是否传了新图
+    if "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name:
         try:
-            pil_img = Image.open(uploaded_file).convert("RGB")
-            img_arr = np.array(pil_img)
-            
-            # 缩放保护
-            max_w = 800
-            if img_arr.shape[1] > max_w:
-                r = max_w / img_arr.shape[1]
-                img_arr = cv2.resize(img_arr, (max_w, int(img_arr.shape[0] * r)))
-                
-            img_bgr = cv2.cvtColor(img_arr, cv2.COLOR_RGB2BGR)
-            
+            # 【防弹级修复】专门处理科研图像的颜色空间和深度转换
+            pil_upload = Image.open(uploaded_file)
+            img_array = np.array(pil_upload)
+
+            # 将 16 位和 32 位科研图像标准化为 8 位，防止白屏
+            if img_array.dtype == np.uint16 or img_array.dtype == np.int32:
+                img_array = (img_array / 256).astype(np.uint8)
+
+            # 转换为标准 BGR 格式给 OpenCV 使用
+            if len(img_array.shape) == 2: # 灰度图
+                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
+            elif len(img_array.shape) == 3 and img_array.shape[2] == 4: # 带有透明通道
+                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
+            elif len(img_array.shape) == 3 and img_array.shape[2] == 3: # 正常彩色图
+                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            else:
+                img_bgr = img_array
+
+            # 限制尺寸为 800，确保绝对不会超出浏览器内存和网络传输限制
+            max_width = 800
+            if img_bgr.shape[1] > max_width:
+                ratio = max_width / img_bgr.shape[1]
+                new_height = int(img_bgr.shape[0] * ratio)
+                img_bgr = cv2.resize(img_bgr, (max_width, new_height))
+
+            # 更新核心状态
             st.session_state.img_matrix = img_bgr
             st.session_state.analyzer = AdvancedSEMAnalyzer()
             st.session_state.analyzer.load_image_from_matrix(img_bgr)
             st.session_state.current_file = uploaded_file.name
-            
-            st.rerun()
         except Exception as e:
             st.error(f"读取图像失败: {e}")
             st.stop()
 
-if st.session_state.get("img_matrix") is not None:
     col_img, col_controls = st.columns([2, 1])
 
     with col_controls:
         st.markdown("### 控制面板")
-        mode = st.radio("选择鼠标操作:", ["设置标尺 (绿)", "框选区域 (黄)", "添加孔洞 (红)", "添加聚合物 (蓝)"])
+
+        mode = st.radio("选择鼠标操作:",
+                        ["设置标尺 (绿)", "框选区域 (黄)", "添加孔洞 (红)", "添加聚合物 (蓝)"])
 
         drawing_mode = "line"
         stroke_color = "green"
-        if mode == "设置标尺 (绿)": drawing_mode, stroke_color = "line", "green"
-        elif mode == "框选区域 (黄)": drawing_mode, stroke_color = "rect", "yellow"
-        elif mode == "添加孔洞 (红)": drawing_mode, stroke_color = "point", "red"
-        elif mode == "添加聚合物 (蓝)": drawing_mode, stroke_color = "point", "blue"
 
-        scale_input = st.number_input("标尺实际长度 (um):", value=0.0, step=1.0)
+        if mode == "设置标尺 (绿)":
+            drawing_mode, stroke_color = "line", "green"
+        elif mode == "框选区域 (黄)":
+            drawing_mode, stroke_color = "rect", "yellow"
+        elif mode == "添加孔洞 (红)":
+            drawing_mode, stroke_color = "point", "red"
+        elif mode == "添加聚合物 (蓝)":
+            drawing_mode, stroke_color = "point", "blue"
+
+        scale_input = st.number_input("标尺实际长度 (um):", value=0)
 
         if st.button("计算孔隙率", type="primary", use_container_width=True):
             with st.spinner("正在计算..."):
@@ -282,7 +343,7 @@ if st.session_state.get("img_matrix") is not None:
                 if porosity is not None:
                     st.success(f"计算完成！孔隙率: {porosity:.2f}%")
                     fig = st.session_state.analyzer._build_report()
-                    st.pyplot(fig)
+                    st.pyplot(fig)  
                 else:
                     st.error(f"计算失败: {msg}")
 
@@ -292,39 +353,21 @@ if st.session_state.get("img_matrix") is not None:
             st.rerun()
 
     with col_img:
-        # ========================================================
-        # 【全网最强核心修复】：物理切断与 Numpy 的内存共享！
-        # 将矩阵转化为图片后，写入虚拟内存流，然后拔掉插头重新读取
-        # 彻底解决 Streamlit Cloud 底层垃圾回收导致的白屏 Bug
-        # ========================================================
-        img_rgb = cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB)
-        raw_pil = Image.fromarray(img_rgb)
-        
-        buf = io.BytesIO()
-        raw_pil.save(buf, format="PNG")
-        buf.seek(0) # 这一句是魔法：把读取游标拨回起点，不然永远读到一张白纸！
-        clean_pil_display = Image.open(buf).convert("RGB")
-        # ========================================================
+        # 获取精确的宽高参数，防止画布变形
+        img_h, img_w = st.session_state.img_matrix.shape[:2]
+        pil_img = Image.fromarray(cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB))
 
-        with st.expander("🖼️ 如果画板空白，点此展开查看底层原图"):
-            st.info("如果这里有图，下方没图，请刷新网页试试。")
-            st.image(clean_pil_display, use_column_width=True)
-
-        st.markdown("##### 🖌️ 交互式标注画板")
-        
-        safe_key = "".join(c for c in str(st.session_state.current_file) if c.isalnum())
-        
-        # 移除了强制设定的 height 和 width 参数，防止前端渲染冲突
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",
             stroke_width=3,
             stroke_color=stroke_color,
-            background_image=clean_pil_display,
+            background_image=pil_img,
             update_streamlit=True,
-            width=clean_pil_display.width,
-            height=clean_pil_display.height,
+            height=int(img_h),
+            width=int(img_w),
             drawing_mode=drawing_mode,
-            key=f"canvas_{safe_key}",
+            # 【核心修复机制】为每张图片分配一个独立的钥匙，彻底打破组件缓存机制！
+            key=f"canvas_{st.session_state.current_file}",
         )
 
         if canvas_result.json_data is not None:
@@ -332,8 +375,10 @@ if st.session_state.get("img_matrix") is not None:
             for obj in canvas_result.json_data["objects"]:
                 if obj["type"] == "circle":
                     r, c = int(obj["top"]), int(obj["left"])
-                    if obj["stroke"] == "red": pores.append((r, c))
-                    elif obj["stroke"] == "blue": polys.append((r, c))
+                    if obj["stroke"] == "red":
+                        pores.append((r, c))
+                    elif obj["stroke"] == "blue":
+                        polys.append((r, c))
                 elif obj["type"] == "line" and obj["stroke"] == "green":
                     pix_len = np.sqrt((obj["x2"] - obj["x1"]) ** 2 + (obj["y2"] - obj["y1"]) ** 2)
                     st.session_state.analyzer.set_scale(pix_len, scale_input)
@@ -346,6 +391,20 @@ if st.session_state.get("img_matrix") is not None:
             st.session_state.analyzer.pore_samples = pores
             st.session_state.analyzer.polymer_samples = polys
 
-        st.markdown(f"**孔洞样本**: {len(st.session_state.analyzer.pore_samples)} | **聚合物样本**: {len(st.session_state.analyzer.polymer_samples)}")
+        st.markdown(
+            f"**孔洞样本**: {len(st.session_state.analyzer.pore_samples)} | **聚合物样本**: {len(st.session_state.analyzer.polymer_samples)}")
 
-st.markdown("<br><br><br><div style='text-align: center; color: #888888; font-size: 14px; padding: 20px 0; border-top: 1px solid #eee;'>作者：材料学院马驰老师，版权所有，如需使用，请与作者联系。</div>", unsafe_allow_html=True)
+# ==========================================
+# 添加：页面底部（版权信息）
+# ==========================================
+st.markdown("<br><br><br>", unsafe_allow_html=True)  
+
+st.markdown(
+    """
+    <div style='text-align: center; color: #888888; font-size: 14px; padding: 20px 0; border-top: 1px solid #eee;'>
+        作者：材料学院马驰老师，版权所有，如需使用，请与作者联系。
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+# ==========================================
