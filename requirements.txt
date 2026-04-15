@@ -3,4 +3,3 @@ streamlit-drawable-canvas==0.9.3
 numpy
 opencv-python-headless
 matplotlib
-Pillow
