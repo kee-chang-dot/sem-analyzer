@@ -16,7 +16,7 @@ plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "STHeiti", "WenQ
 plt.rcParams["axes.unicode_minus"] = False
 
 # ====================================================================
-# 核心计算类
+# 核心计算类 (完全保留)
 # ====================================================================
 class AdvancedSEMAnalyzer:
     def __init__(self):
@@ -236,41 +236,33 @@ st.markdown("---")
 uploaded_file = st.file_uploader("选择 SEM 图像", type=["png", "jpg", "jpeg", "tif", "tiff"])
 
 if uploaded_file is not None:
-    if "current_file" not in st.session_state or st.session_state.current_file != uploaded_file.name:
+    if st.session_state.get("current_file") != uploaded_file.name:
         try:
-            uploaded_file.seek(0)
-            pil_upload = Image.open(uploaded_file)
-            img_array = np.array(pil_upload)
-
-            # 【科研图像核武器】：ImageJ 式的自动对比度增强 (Auto-Contrast)
-            # 无论图像多暗、对比度多低，强制拉伸到人类肉眼可见的 0-255 范围
-            img_array = cv2.normalize(img_array, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-
-            # 统一转换为 BGR 彩色通道
-            if len(img_array.shape) == 2: # 灰度图
-                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_GRAY2BGR)
-            elif len(img_array.shape) == 3 and img_array.shape[2] == 4: # RGBA
-                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGBA2BGR)
-            elif len(img_array.shape) == 3 and img_array.shape[2] == 3: # RGB
-                img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            else:
-                img_bgr = img_array
-
-            # 限制尺寸，确保稳定渲染
-            max_width = 800
-            if img_bgr.shape[1] > max_width:
-                ratio = max_width / img_bgr.shape[1]
-                new_height = int(img_bgr.shape[0] * ratio)
-                img_bgr = cv2.resize(img_bgr, (max_width, new_height))
-
+            # 最纯净的读取方式：直接转为标准 RGB
+            pil_img = Image.open(uploaded_file).convert("RGB")
+            img_arr = np.array(pil_img)
+            
+            # 限制尺寸防止画板崩溃
+            max_w = 1000
+            if img_arr.shape[1] > max_w:
+                r = max_w / img_arr.shape[1]
+                img_arr = cv2.resize(img_arr, (max_w, int(img_arr.shape[0] * r)))
+                
+            img_bgr = cv2.cvtColor(img_arr, cv2.COLOR_RGB2BGR)
+            
+            # 保存到系统状态
             st.session_state.img_matrix = img_bgr
             st.session_state.analyzer = AdvancedSEMAnalyzer()
             st.session_state.analyzer.load_image_from_matrix(img_bgr)
             st.session_state.current_file = uploaded_file.name
+            
+            # 强行重载网页以刷新画板缓存
+            st.rerun()
         except Exception as e:
             st.error(f"读取图像失败: {e}")
             st.stop()
 
+if st.session_state.get("img_matrix") is not None:
     col_img, col_controls = st.columns([2, 1])
 
     with col_controls:
@@ -284,7 +276,7 @@ if uploaded_file is not None:
         elif mode == "添加孔洞 (红)": drawing_mode, stroke_color = "point", "red"
         elif mode == "添加聚合物 (蓝)": drawing_mode, stroke_color = "point", "blue"
 
-        scale_input = st.number_input("标尺实际长度 (um):", value=0)
+        scale_input = st.number_input("标尺实际长度 (um):", value=0.0, step=1.0)
 
         if st.button("计算孔隙率", type="primary", use_container_width=True):
             with st.spinner("正在计算..."):
@@ -302,25 +294,24 @@ if uploaded_file is not None:
             st.rerun()
 
     with col_img:
-        img_h, img_w = st.session_state.img_matrix.shape[:2]
-        pil_img_for_canvas = Image.fromarray(cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB))
-
-        # 【试金石系统】：系统原生图像预览
-        st.markdown("##### 📷 试金石：系统原生图像预览")
-        st.info("如果你能在这里看到图片，说明图像读取完美成功！如果下方画板仍是空白，说明是浏览器屏蔽了画板。")
-        st.image(pil_img_for_canvas, use_column_width=True)
+        pil_display = Image.fromarray(cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB))
         
+        # 折叠原图预览（点击可展开查看图片是否完好）
+        with st.expander("🖼️ 如果画板空白，点此展开查看底层原图"):
+            st.info("如果这里有图，下方没图，说明完全是画板组件的显示问题。")
+            st.image(pil_display, use_column_width=True)
+
         st.markdown("##### 🖌️ 交互式标注画板")
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",
             stroke_width=3,
             stroke_color=stroke_color,
-            background_image=pil_img_for_canvas,
+            background_image=pil_display,
             update_streamlit=True,
-            height=int(img_h),
-            width=int(img_w),
+            height=pil_display.height,
+            width=pil_display.width,
             drawing_mode=drawing_mode,
-            key=f"sem_canvas_{st.session_state.current_file}",
+            key=f"canvas_{st.session_state.current_file}",
         )
 
         if canvas_result.json_data is not None:
@@ -341,5 +332,7 @@ if uploaded_file is not None:
 
             st.session_state.analyzer.pore_samples = pores
             st.session_state.analyzer.polymer_samples = polys
+
+        st.markdown(f"**孔洞样本**: {len(st.session_state.analyzer.pore_samples)} | **聚合物样本**: {len(st.session_state.analyzer.polymer_samples)}")
 
 st.markdown("<br><br><br><div style='text-align: center; color: #888888; font-size: 14px; padding: 20px 0; border-top: 1px solid #eee;'>作者：材料学院马驰老师，版权所有，如需使用，请与作者联系。</div>", unsafe_allow_html=True)
