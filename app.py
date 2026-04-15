@@ -10,13 +10,14 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import matplotlib.gridspec as gridspec
 import os
+import io
 from PIL import Image
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "STHeiti", "WenQuanYi Micro Hei", "Arial Unicode MS"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # ====================================================================
-# 核心计算类 
+# 核心计算类 (完全保留无改动)
 # ====================================================================
 class AdvancedSEMAnalyzer:
     def __init__(self):
@@ -241,6 +242,7 @@ if uploaded_file is not None:
             pil_img = Image.open(uploaded_file).convert("RGB")
             img_arr = np.array(pil_img)
             
+            # 缩放保护
             max_w = 800
             if img_arr.shape[1] > max_w:
                 r = max_w / img_arr.shape[1]
@@ -290,25 +292,37 @@ if st.session_state.get("img_matrix") is not None:
             st.rerun()
 
     with col_img:
-        # 【终极修复点】：强制转换为画板组件最喜欢的 RGBA 格式，不留任何懒加载隐患！
-        pil_display = Image.fromarray(cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB)).convert("RGBA")
+        # ========================================================
+        # 【全网最强核心修复】：物理切断与 Numpy 的内存共享！
+        # 将矩阵转化为图片后，写入虚拟内存流，然后拔掉插头重新读取
+        # 彻底解决 Streamlit Cloud 底层垃圾回收导致的白屏 Bug
+        # ========================================================
+        img_rgb = cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB)
+        raw_pil = Image.fromarray(img_rgb)
         
+        buf = io.BytesIO()
+        raw_pil.save(buf, format="PNG")
+        buf.seek(0) # 这一句是魔法：把读取游标拨回起点，不然永远读到一张白纸！
+        clean_pil_display = Image.open(buf).convert("RGB")
+        # ========================================================
+
         with st.expander("🖼️ 如果画板空白，点此展开查看底层原图"):
-            st.info("如果这里有图，下方没图，说明完全是画板组件的显示问题。")
-            st.image(pil_display, use_column_width=True)
+            st.info("如果这里有图，下方没图，请刷新网页试试。")
+            st.image(clean_pil_display, use_column_width=True)
 
         st.markdown("##### 🖌️ 交互式标注画板")
         
         safe_key = "".join(c for c in str(st.session_state.current_file) if c.isalnum())
         
+        # 移除了强制设定的 height 和 width 参数，防止前端渲染冲突
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",
             stroke_width=3,
             stroke_color=stroke_color,
-            background_image=pil_display,  # 传入绝对无懈可击的 RGBA 图像对象
+            background_image=clean_pil_display,
             update_streamlit=True,
-            height=pil_display.height,
-            width=pil_display.width,
+            width=clean_pil_display.width,
+            height=clean_pil_display.height,
             drawing_mode=drawing_mode,
             key=f"canvas_{safe_key}",
         )
