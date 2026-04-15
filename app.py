@@ -16,7 +16,7 @@ plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "STHeiti", "WenQ
 plt.rcParams["axes.unicode_minus"] = False
 
 # ====================================================================
-# 核心计算类 (完全保留)
+# 核心计算类 
 # ====================================================================
 class AdvancedSEMAnalyzer:
     def __init__(self):
@@ -238,12 +238,12 @@ uploaded_file = st.file_uploader("选择 SEM 图像", type=["png", "jpg", "jpeg"
 if uploaded_file is not None:
     if st.session_state.get("current_file") != uploaded_file.name:
         try:
-            # 最纯净的读取方式：直接转为标准 RGB
+            # 绝对防弹的读取逻辑
             pil_img = Image.open(uploaded_file).convert("RGB")
             img_arr = np.array(pil_img)
             
             # 限制尺寸防止画板崩溃
-            max_w = 1000
+            max_w = 800
             if img_arr.shape[1] > max_w:
                 r = max_w / img_arr.shape[1]
                 img_arr = cv2.resize(img_arr, (max_w, int(img_arr.shape[0] * r)))
@@ -296,7 +296,7 @@ if st.session_state.get("img_matrix") is not None:
     with col_img:
         pil_display = Image.fromarray(cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB))
         
-        # 折叠原图预览（点击可展开查看图片是否完好）
+        # 折叠原图预览（双保险）
         with st.expander("🖼️ 如果画板空白，点此展开查看底层原图"):
             st.info("如果这里有图，下方没图，说明完全是画板组件的显示问题。")
             st.image(pil_display, use_column_width=True)
