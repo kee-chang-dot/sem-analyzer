@@ -1,5 +1,5 @@
-streamlit==1.32.0
-streamlit-drawable-canvas==0.9.3
+streamlit==1.36.0
+streamlit-drawable-canvas
 numpy
 opencv-python-headless
 matplotlib
