@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 import matplotlib.gridspec as gridspec
 import os
+import io
 from PIL import Image
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei", "STHeiti", "WenQuanYi Micro Hei", "Arial Unicode MS"]
@@ -294,24 +295,35 @@ if st.session_state.get("img_matrix") is not None:
             st.rerun()
 
     with col_img:
-        pil_display = Image.fromarray(cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB))
+        # 将矩阵转回 RGB 图像
+        raw_pil = Image.fromarray(cv2.cvtColor(st.session_state.img_matrix, cv2.COLOR_BGR2RGB))
+        
+        # 【最核心修复】：内存流清洗技术。强制通过真实的 PNG 格式重新写入和读取
+        # 彻底洗掉可能导致 HTML5 Canvas 崩溃的 Numpy 内存映射和隐性元数据
+        buf = io.BytesIO()
+        raw_pil.save(buf, format="PNG")
+        clean_pil_display = Image.open(buf)
         
         # 折叠原图预览（双保险）
         with st.expander("🖼️ 如果画板空白，点此展开查看底层原图"):
             st.info("如果这里有图，下方没图，说明完全是画板组件的显示问题。")
-            st.image(pil_display, use_column_width=True)
+            st.image(clean_pil_display, use_column_width=True)
 
         st.markdown("##### 🖌️ 交互式标注画板")
+        
+        # 生成一个绝对安全的只包含字母和数字的 key，防止任何奇怪的标点符号导致组件崩溃
+        safe_key = "".join(c for c in str(st.session_state.current_file) if c.isalnum())
+        
         canvas_result = st_canvas(
             fill_color="rgba(255, 165, 0, 0.3)",
             stroke_width=3,
             stroke_color=stroke_color,
-            background_image=pil_display,
+            background_image=clean_pil_display, # 使用被“清洗”过后的纯净图像对象
             update_streamlit=True,
-            height=pil_display.height,
-            width=pil_display.width,
+            height=clean_pil_display.height,
+            width=clean_pil_display.width,
             drawing_mode=drawing_mode,
-            key=f"canvas_{st.session_state.current_file}",
+            key=f"canvas_{safe_key}",
         )
 
         if canvas_result.json_data is not None:
